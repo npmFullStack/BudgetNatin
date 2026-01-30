@@ -1,5 +1,5 @@
 import express from "express";
-import connection from "./db.js";
+import pool from "./db.js";
 import createResponse from "./helper.js";
 import verifyToken from "./authMiddleware.js";
 
@@ -10,15 +10,15 @@ router.get("/", verifyToken, async (req, res) => {
     try {
         const userId = req.user.id;
 
-        const [categories] = await connection.query(
-            "SELECT * FROM expense_categories WHERE user_id = ? ORDER BY name ASC",
+        const result = await pool.query(
+            "SELECT * FROM expense_categories WHERE user_id = $1 ORDER BY name ASC",
             [userId]
         );
 
         const response = createResponse(
             true,
             "Categories retrieved successfully",
-            categories
+            result.rows
         );
         res.json(response);
     } catch (error) {
@@ -40,12 +40,12 @@ router.post("/", verifyToken, async (req, res) => {
         }
 
         // Check if category already exists for this user
-        const [existing] = await connection.query(
-            "SELECT category_id FROM expense_categories WHERE user_id = ? AND name = ?",
+        const existing = await pool.query(
+            "SELECT category_id FROM expense_categories WHERE user_id = $1 AND name = $2",
             [userId, name.trim()]
         );
 
-        if (existing.length > 0) {
+        if (existing.rows.length > 0) {
             const response = createResponse(
                 false,
                 "Category already exists"
@@ -53,15 +53,15 @@ router.post("/", verifyToken, async (req, res) => {
             return res.status(400).json(response);
         }
 
-        const [result] = await connection.query(
-            "INSERT INTO expense_categories (user_id, name) VALUES (?, ?)",
+        const result = await pool.query(
+            "INSERT INTO expense_categories (user_id, name) VALUES ($1, $2) RETURNING category_id",
             [userId, name.trim()]
         );
 
         const response = createResponse(
             true,
             "Category added successfully",
-            { category_id: result.insertId, name: name.trim() }
+            { category_id: result.rows[0].category_id, name: name.trim() }
         );
         res.status(201).json(response);
     } catch (error) {
@@ -84,12 +84,12 @@ router.put("/:category_id", verifyToken, async (req, res) => {
         }
 
         // Check if new name already exists for this user
-        const [existing] = await connection.query(
-            "SELECT category_id FROM expense_categories WHERE user_id = ? AND name = ? AND category_id != ?",
+        const existing = await pool.query(
+            "SELECT category_id FROM expense_categories WHERE user_id = $1 AND name = $2 AND category_id != $3",
             [userId, name.trim(), category_id]
         );
 
-        if (existing.length > 0) {
+        if (existing.rows.length > 0) {
             const response = createResponse(
                 false,
                 "Category name already exists"
@@ -97,12 +97,12 @@ router.put("/:category_id", verifyToken, async (req, res) => {
             return res.status(400).json(response);
         }
 
-        const [result] = await connection.query(
-            "UPDATE expense_categories SET name = ? WHERE category_id = ? AND user_id = ?",
+        const result = await pool.query(
+            "UPDATE expense_categories SET name = $1 WHERE category_id = $2 AND user_id = $3",
             [name.trim(), category_id, userId]
         );
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
             const response = createResponse(false, "Category not found");
             return res.status(404).json(response);
         }
@@ -123,12 +123,12 @@ router.delete("/:category_id", verifyToken, async (req, res) => {
         const { category_id } = req.params;
 
         // Check if category has expenses
-        const [expenses] = await connection.query(
-            "SELECT expense_id FROM expenses WHERE category_id = ? AND user_id = ? LIMIT 1",
+        const expenses = await pool.query(
+            "SELECT expense_id FROM expenses WHERE category_id = $1 AND user_id = $2 LIMIT 1",
             [category_id, userId]
         );
 
-        if (expenses.length > 0) {
+        if (expenses.rows.length > 0) {
             const response = createResponse(
                 false,
                 "Cannot delete category with existing expenses. Please reassign or delete expenses first."
@@ -136,12 +136,12 @@ router.delete("/:category_id", verifyToken, async (req, res) => {
             return res.status(400).json(response);
         }
 
-        const [result] = await connection.query(
-            "DELETE FROM expense_categories WHERE category_id = ? AND user_id = ?",
+        const result = await pool.query(
+            "DELETE FROM expense_categories WHERE category_id = $1 AND user_id = $2",
             [category_id, userId]
         );
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
             const response = createResponse(false, "Category not found");
             return res.status(404).json(response);
         }

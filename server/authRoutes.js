@@ -2,7 +2,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import passport from "./oauth.js";
-import connection from "./db.js";
+import pool from "./db.js";
 import createResponse from "./helper.js";
 import verifyToken from "./authMiddleware.js";
 
@@ -13,7 +13,6 @@ router.post("/register", async (req, res) => {
     try {
         const { firstname, lastname, username, email, password } = req.body;
 
-        // Check if data is provided
         if (!firstname || !lastname || !username || !email || !password) {
             const response = createResponse(
                 false,
@@ -23,12 +22,12 @@ router.post("/register", async (req, res) => {
         }
 
         // Check if user already exists
-        const [existingUsers] = await connection.query(
-            "SELECT * FROM users WHERE email = ? OR username = ?",
+        const existingUsers = await pool.query(
+            "SELECT * FROM users WHERE email = $1 OR username = $2",
             [email, username]
         );
 
-        if (existingUsers.length > 0) {
+        if (existingUsers.rows.length > 0) {
             const response = createResponse(
                 false,
                 "User already exists with this email or username"
@@ -36,30 +35,30 @@ router.post("/register", async (req, res) => {
             return res.status(400).json(response);
         }
 
-        // Hash password for security
+        // Hash password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // Insert into database
-        const [result] = await connection.query(
-            "INSERT INTO users (firstname, lastname, username, email, password) VALUES (?, ?, ?, ?, ?)",
+        const result = await pool.query(
+            "INSERT INTO users (firstname, lastname, username, email, password) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             [firstname, lastname, username, email, hashedPassword]
         );
 
         // Create JWT token
         const token = jwt.sign(
             {
-                id: result.insertId,
+                id: result.rows[0].id,
                 email: email,
                 username: username
             },
             process.env.JWT_SECRET,
-            { expiresIn: "7d" } // Token expires in 7 days
+            { expiresIn: "7d" }
         );
 
-        // Create new user object (without password)
+        // Create new user object
         const newUser = {
-            id: result.insertId,
+            id: result.rows[0].id,
             firstname: firstname,
             lastname: lastname,
             username: username,
@@ -85,7 +84,6 @@ router.post("/login", async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Check if data is provided
         if (!email || !password) {
             const response = createResponse(
                 false,
@@ -95,18 +93,17 @@ router.post("/login", async (req, res) => {
         }
 
         // Find user by email
-        const [users] = await connection.query(
-            "SELECT * FROM users WHERE email = ? AND auth_provider = 'local'",
+        const users = await pool.query(
+            "SELECT * FROM users WHERE email = $1 AND auth_provider = 'local'",
             [email]
         );
 
-        // Check if user exists
-        if (users.length === 0) {
+        if (users.rows.length === 0) {
             const response = createResponse(false, "Invalid email or password");
             return res.status(400).json(response);
         }
 
-        const user = users[0];
+        const user = users.rows[0];
 
         // Verify password
         const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -169,10 +166,9 @@ router.get(
     }),
     async (req, res) => {
         try {
-            // User is authenticated via Google
             const user = req.user;
 
-            // Create JWT token for your app
+            // Create JWT token
             const token = jwt.sign(
                 {
                     id: user.id,
@@ -183,7 +179,7 @@ router.get(
                 { expiresIn: "7d" }
             );
 
-            // Create user object (without password)
+            // Create user object
             const userData = {
                 id: user.id,
                 firstname: user.firstname,
@@ -193,7 +189,6 @@ router.get(
                 auth_provider: user.auth_provider
             };
 
-            // Redirect to frontend with token and user data as URL parameters
             const frontendUrl = `http://localhost:5173/auth/callback?token=${token}&user=${encodeURIComponent(
                 JSON.stringify(userData)
             )}`;
@@ -208,22 +203,19 @@ router.get(
 // ======== GET CURRENT USER ========
 router.get("/me", verifyToken, async (req, res) => {
     try {
-        // Get user ID from token (set by verifyToken middleware)
         const userId = req.user.id;
 
-        // Get user from database
-        const [users] = await connection.query(
-            "SELECT id, firstname, lastname, username, email, auth_provider, created_at FROM users WHERE id = ?",
+        const users = await pool.query(
+            "SELECT id, firstname, lastname, username, email, auth_provider, created_at FROM users WHERE id = $1",
             [userId]
         );
 
-        // Check if user exists
-        if (users.length === 0) {
+        if (users.rows.length === 0) {
             const response = createResponse(false, "User not found");
             return res.status(404).json(response);
         }
 
-        const response = createResponse(true, "User data retrieved", users[0]);
+        const response = createResponse(true, "User data retrieved", users.rows[0]);
         res.json(response);
     } catch (error) {
         console.log("❌ Error:", error.message);

@@ -1,5 +1,5 @@
 import express from "express";
-import connection from "./db.js";
+import pool from "./db.js";
 import createResponse from "./helper.js";
 import verifyToken from "./authMiddleware.js";
 
@@ -11,22 +11,22 @@ router.get("/", verifyToken, async (req, res) => {
         const userId = req.user.id;
         const { month } = req.query; // Format: YYYY-MM
 
-        let query = "SELECT * FROM monthly_budget WHERE user_id = ?";
+        let query = "SELECT * FROM monthly_budget WHERE user_id = $1";
         const params = [userId];
 
         if (month) {
-            query += " AND DATE_FORMAT(month, '%Y-%m') = ?";
+            query += " AND TO_CHAR(month, 'YYYY-MM') = $2";
             params.push(month);
         }
 
         query += " ORDER BY month DESC";
 
-        const [budgets] = await connection.query(query, params);
+        const result = await pool.query(query, params);
 
         const response = createResponse(
             true,
             "Monthly budgets retrieved successfully",
-            budgets
+            result.rows
         );
         res.json(response);
     } catch (error) {
@@ -55,30 +55,30 @@ router.post("/", verifyToken, async (req, res) => {
         const formattedMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
 
         // Check if budget exists for this month
-        const [existing] = await connection.query(
-            "SELECT budget_id FROM monthly_budget WHERE user_id = ? AND month = ?",
+        const existing = await pool.query(
+            "SELECT budget_id FROM monthly_budget WHERE user_id = $1 AND month = $2",
             [userId, formattedMonth]
         );
 
         let result;
-        if (existing.length > 0) {
+        if (existing.rows.length > 0) {
             // Update existing budget
-            [result] = await connection.query(
-                "UPDATE monthly_budget SET amount = ?, updated_at = NOW() WHERE budget_id = ?",
-                [amount, existing[0].budget_id]
+            result = await pool.query(
+                "UPDATE monthly_budget SET amount = $1, updated_at = NOW() WHERE budget_id = $2 RETURNING budget_id",
+                [amount, existing.rows[0].budget_id]
             );
         } else {
             // Insert new budget
-            [result] = await connection.query(
-                "INSERT INTO monthly_budget (user_id, month, amount) VALUES (?, ?, ?)",
+            result = await pool.query(
+                "INSERT INTO monthly_budget (user_id, month, amount) VALUES ($1, $2, $3) RETURNING budget_id",
                 [userId, formattedMonth, amount]
             );
         }
 
         const response = createResponse(
             true,
-            existing.length > 0 ? "Monthly budget updated" : "Monthly budget added",
-            { budget_id: existing.length > 0 ? existing[0].budget_id : result.insertId }
+            existing.rows.length > 0 ? "Monthly budget updated" : "Monthly budget added",
+            { budget_id: result.rows[0].budget_id }
         );
         res.status(201).json(response);
     } catch (error) {
@@ -94,12 +94,12 @@ router.delete("/:budget_id", verifyToken, async (req, res) => {
         const userId = req.user.id;
         const { budget_id } = req.params;
 
-        const [result] = await connection.query(
-            "DELETE FROM monthly_budget WHERE budget_id = ? AND user_id = ?",
+        const result = await pool.query(
+            "DELETE FROM monthly_budget WHERE budget_id = $1 AND user_id = $2",
             [budget_id, userId]
         );
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
             const response = createResponse(false, "Budget not found");
             return res.status(404).json(response);
         }

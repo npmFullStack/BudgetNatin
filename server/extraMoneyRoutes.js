@@ -1,5 +1,5 @@
 import express from "express";
-import connection from "./db.js";
+import pool from "./db.js";
 import createResponse from "./helper.js";
 import verifyToken from "./authMiddleware.js";
 
@@ -11,22 +11,22 @@ router.get("/", verifyToken, async (req, res) => {
         const userId = req.user.id;
         const { month } = req.query;
 
-        let query = "SELECT * FROM extra_money WHERE user_id = ?";
+        let query = "SELECT * FROM extra_money WHERE user_id = $1";
         const params = [userId];
 
         if (month) {
-            query += " AND DATE_FORMAT(budget_month, '%Y-%m') = ?";
+            query += " AND TO_CHAR(budget_month, 'YYYY-MM') = $2";
             params.push(month);
         }
 
         query += " ORDER BY added_date DESC";
 
-        const [extraMoney] = await connection.query(query, params);
+        const result = await pool.query(query, params);
 
         const response = createResponse(
             true,
             "Extra money records retrieved successfully",
-            extraMoney
+            result.rows
         );
         res.json(response);
     } catch (error) {
@@ -52,17 +52,17 @@ router.post("/", verifyToken, async (req, res) => {
 
         const month = budget_month ? new Date(budget_month) : new Date();
 
-        const [result] = await connection.query(
+        const result = await pool.query(
             `INSERT INTO extra_money 
             (user_id, amount, budget_month) 
-            VALUES (?, ?, ?)`,
+            VALUES ($1, $2, $3) RETURNING extra_id`,
             [userId, amount, month]
         );
 
         const response = createResponse(
             true,
             "Extra money added successfully",
-            { extra_id: result.insertId }
+            { extra_id: result.rows[0].extra_id }
         );
         res.status(201).json(response);
     } catch (error) {
@@ -89,15 +89,15 @@ router.put("/:extra_id", verifyToken, async (req, res) => {
 
         const month = budget_month ? new Date(budget_month) : new Date();
 
-        const [result] = await connection.query(
+        const result = await pool.query(
             `UPDATE extra_money SET 
-            amount = ?, 
-            budget_month = ? 
-            WHERE extra_id = ? AND user_id = ?`,
+            amount = $1, 
+            budget_month = $2 
+            WHERE extra_id = $3 AND user_id = $4`,
             [amount, month, extra_id, userId]
         );
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
             const response = createResponse(false, "Record not found");
             return res.status(404).json(response);
         }
@@ -117,12 +117,12 @@ router.delete("/:extra_id", verifyToken, async (req, res) => {
         const userId = req.user.id;
         const { extra_id } = req.params;
 
-        const [result] = await connection.query(
-            "DELETE FROM extra_money WHERE extra_id = ? AND user_id = ?",
+        const result = await pool.query(
+            "DELETE FROM extra_money WHERE extra_id = $1 AND user_id = $2",
             [extra_id, userId]
         );
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
             const response = createResponse(false, "Record not found");
             return res.status(404).json(response);
         }
