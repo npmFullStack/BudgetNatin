@@ -1,0 +1,11 @@
+/* For Logo/Heading */
+@font-face {
+    font-family: "Anton SC";
+    src: url("./assets/fonts/antonsc.woff2") format("woff2");
+}
+
+/* For Default Texts */
+@font-face {
+    font-family: "Montserrat";
+    src: url("./assets/fonts/montserrat.woff2") format("woff2");
+}
