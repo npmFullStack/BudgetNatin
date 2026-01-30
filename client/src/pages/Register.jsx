@@ -65,16 +65,13 @@ const Register = () => {
 
         try {
             // Using the centralized api instance
-            const response = await api.post(
-                "/api/auth/register",
-                {
-                    firstname: formData.firstname,
-                    lastname: formData.lastname,
-                    username: formData.username,
-                    email: formData.email,
-                    password: formData.password
-                }
-            );
+            const response = await api.post("/api/auth/register", {
+                firstname: formData.firstname,
+                lastname: formData.lastname,
+                username: formData.username,
+                email: formData.email,
+                password: formData.password
+            });
 
             if (response.data.success) {
                 setSuccess(
@@ -111,7 +108,8 @@ const Register = () => {
         setSocialLoading(true);
         try {
             // Use the full URL for OAuth redirect
-            const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000";
+            const apiUrl =
+                import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
             window.location.href = `${apiUrl}/api/auth/google`;
         } catch (err) {
             setError("Failed to connect with Google");
