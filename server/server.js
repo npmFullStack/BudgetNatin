@@ -18,10 +18,11 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // CORS configuration for production
+
 const allowedOrigins = [
     "http://localhost:5173",
-    "https://your-frontend.onrender.com", // Add your Render frontend URL later
-    process.env.CLIENT_URL // Environment variable for flexibility
+    "https://budgetnatinweb.onrender.com", // Your frontend URL
+    process.env.CLIENT_URL
 ].filter(Boolean);
 
 app.use(
@@ -29,9 +30,10 @@ app.use(
         origin: function (origin, callback) {
             // Allow requests with no origin (like mobile apps or curl requests)
             if (!origin) return callback(null, true);
-            
+
             if (allowedOrigins.indexOf(origin) === -1) {
-                const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+                const msg =
+                    "The CORS policy for this site does not allow access from the specified Origin.";
                 return callback(new Error(msg), false);
             }
             return callback(null, true);
@@ -62,16 +64,16 @@ app.use(passport.session());
 
 // Health check endpoint (important for Render)
 app.get("/health", (req, res) => {
-    res.status(200).json({ 
-        status: "OK", 
+    res.status(200).json({
+        status: "OK",
         timestamp: new Date(),
-        environment: process.env.NODE_ENV 
+        environment: process.env.NODE_ENV
     });
 });
 
 // Root endpoint
 app.get("/", (req, res) => {
-    res.json({ 
+    res.json({
         message: "Budgetnatin Backend API is running!",
         version: "1.0.0",
         docs: "/api endpoints available"
@@ -89,9 +91,10 @@ app.use("/api/notifications", notificationRoutes);
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).json({ 
+    res.status(500).json({
         error: "Something went wrong!",
-        message: process.env.NODE_ENV === "development" ? err.message : undefined
+        message:
+            process.env.NODE_ENV === "development" ? err.message : undefined
     });
 });
 
@@ -105,6 +108,6 @@ app.listen(PORT, () => {
     console.log("============================");
     console.log(`✅ Server started on port ${PORT}`);
     console.log(`📡 http://localhost:${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
     console.log("============================");
 });
