@@ -7,15 +7,15 @@ const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false  // Add this object, not just boolean
-  }
+  ssl: { rejectUnauthorized: false }
 });
 
 // Function to create tables
 const createTables = async () => {
+  const client = await pool.connect();
   try {
-    const sql = `
+    // Create users table first
+    await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
@@ -28,7 +28,10 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-
+    `);
+    
+    // Create other tables
+    await client.query(`
       CREATE TABLE IF NOT EXISTS expense_categories (
         category_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -37,7 +40,9 @@ const createTables = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         CONSTRAINT unique_user_category UNIQUE (user_id, name)
       );
-
+    `);
+    
+    await client.query(`
       CREATE TABLE IF NOT EXISTS monthly_budget (
         budget_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -48,7 +53,9 @@ const createTables = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         CONSTRAINT unique_user_month UNIQUE (user_id, month)
       );
-
+    `);
+    
+    await client.query(`
       CREATE TABLE IF NOT EXISTS expenses (
         expense_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -59,7 +66,9 @@ const createTables = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (category_id) REFERENCES expense_categories(category_id) ON DELETE CASCADE
       );
-
+    `);
+    
+    await client.query(`
       CREATE TABLE IF NOT EXISTS extra_money (
         extra_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -68,7 +77,9 @@ const createTables = async () => {
         added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
-
+    `);
+    
+    await client.query(`
       CREATE TABLE IF NOT EXISTS notifications (
         notification_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -81,37 +92,19 @@ const createTables = async () => {
         related_type VARCHAR(50),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
-    `;
+    `);
     
-    await pool.query(sql);
-    console.log("✅ Database tables created/verified successfully!");
-    
+    console.log("✅ Database tables created successfully!");
   } catch (error) {
-    console.error('❌ Error creating database tables:', error.message);
-    // Don't exit, just log error
+    console.error('❌ Error creating tables:', error.message);
+  } finally {
+    client.release();
   }
 };
 
-// Initialize database - with retry logic
-const initializeDatabase = async () => {
-  try {
-    // Test connection first
-    await pool.query('SELECT NOW()');
-    console.log("✅ PostgreSQL Database Connected!");
-    
-    // Then create tables
-    await createTables();
-  } catch (error) {
-    console.error('❌ Database initialization error:', error.message);
-    // Retry after 5 seconds
-    setTimeout(initializeDatabase, 5000);
-  }
-};
+// Initialize database on startup
+createTables();
 
-// Start database initialization
-initializeDatabase();
-
-// Query helper function
 export const query = async (text, params) => {
   try {
     const result = await pool.query(text, params);
