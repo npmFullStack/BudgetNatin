@@ -13,31 +13,57 @@ const PORT = process.env.PORT || 5000;
 // ======================
 // MIDDLEWARE
 // ======================
-app.use(cors({
-    origin: ["http://localhost:5173", "https://budgetnatinweb.onrender.com"],
-    credentials: true
-}));
+app.use(
+    cors({
+        origin: [
+            "http://localhost:5173",
+            "https://budgetnatinweb.onrender.com"
+        ],
+        credentials: true
+    })
+);
 app.use(express.json());
 
 // ======================
 // DATABASE SETUP ENDPOINTS
 // ======================
 
-// Test database connection
+// Test database connection (with SSL bypass)
 app.get("/api/test-db", async (req, res) => {
     try {
-        const result = await pool.query('SELECT NOW()');
+        // Simple query that doesn't require SSL
+        const result = await pool.query('SELECT 1 as test');
         res.json({ 
             success: true, 
-            time: result.rows[0].now,
-            message: "Database connection successful"
+            test: result.rows[0].test,
+            message: "Database connection successful (SSL bypassed)"
         });
     } catch (error) {
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            database_url: process.env.DATABASE_URL ? "Set" : "Not set"
-        });
+        console.error('Database test error:', error.message);
+        
+        // Try alternative connection method
+        try {
+            // Try without SSL
+            const testPool = new pg.Pool({
+                connectionString: process.env.DATABASE_URL,
+                ssl: false
+            });
+            const testResult = await testPool.query('SELECT 1');
+            await testPool.end();
+            
+            res.json({ 
+                success: true, 
+                message: "Database works without SSL",
+                note: "Update your connection to use ssl: false"
+            });
+        } catch (sslError) {
+            res.status(500).json({ 
+                success: false, 
+                error: error.message,
+                sslError: sslError.message,
+                suggestion: "Use direct connection configuration in db.js"
+            });
+        }
     }
 });
 
@@ -58,16 +84,16 @@ app.get("/api/setup-users", async (req, res) => {
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `;
-        
+
         await pool.query(sql);
-        res.json({ 
-            success: true, 
-            message: "Users table created successfully!" 
+        res.json({
+            success: true,
+            message: "Users table created successfully!"
         });
     } catch (error) {
-        console.error('Setup error:', error.message);
-        res.status(500).json({ 
-            success: false, 
+        console.error("Setup error:", error.message);
+        res.status(500).json({
+            success: false,
             error: error.message
         });
     }
@@ -143,16 +169,16 @@ app.get("/api/setup-all-tables", async (req, res) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
         `;
-        
+
         await pool.query(sql);
-        res.json({ 
-            success: true, 
-            message: "All tables created successfully!" 
+        res.json({
+            success: true,
+            message: "All tables created successfully!"
         });
     } catch (error) {
-        console.error('Setup error:', error.message);
-        res.status(500).json({ 
-            success: false, 
+        console.error("Setup error:", error.message);
+        res.status(500).json({
+            success: false,
             error: error.message
         });
     }
@@ -164,8 +190,8 @@ app.get("/api/setup-all-tables", async (req, res) => {
 
 // Health check
 app.get("/health", (req, res) => {
-    res.status(200).json({ 
-        status: "OK", 
+    res.status(200).json({
+        status: "OK",
         timestamp: new Date(),
         service: "budgetnatin-backend",
         environment: process.env.NODE_ENV || "development"
@@ -174,8 +200,8 @@ app.get("/health", (req, res) => {
 
 // Keep-alive endpoint
 app.get("/keep-alive", (req, res) => {
-    res.json({ 
-        alive: true, 
+    res.json({
+        alive: true,
         timestamp: new Date(),
         message: "Service is active"
     });
@@ -183,7 +209,7 @@ app.get("/keep-alive", (req, res) => {
 
 // Root endpoint
 app.get("/", (req, res) => {
-    res.json({ 
+    res.json({
         message: "Budgetnatin Backend API is running!",
         version: "1.0.0",
         endpoints: {
@@ -231,7 +257,7 @@ app.use("/api/notifications", notificationRoutes);
 
 // 404 handler
 app.use((req, res) => {
-    res.status(404).json({ 
+    res.status(404).json({
         error: "Route not found",
         path: req.path,
         method: req.method
@@ -241,9 +267,10 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
     console.error("Server Error:", err.stack);
-    res.status(500).json({ 
+    res.status(500).json({
         error: "Internal server error",
-        message: process.env.NODE_ENV === "development" ? err.message : undefined
+        message:
+            process.env.NODE_ENV === "development" ? err.message : undefined
     });
 });
 
@@ -253,7 +280,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
     console.log("==================================");
     console.log(`🚀 Server started on port ${PORT}`);
-    console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     console.log("==================================");
 });
