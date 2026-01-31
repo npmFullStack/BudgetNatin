@@ -7,17 +7,10 @@ const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
-
-// Test connection on startup
-pool.connect((err, client, done) => {
-  if (err) {
-    console.error('❌ Database connection error:', err.message);
-  } else {
-    console.log('✅ Database connected successfully');
-    done();
-  }
+  // Try without SSL first, then with rejectUnauthorized: false
+  ssl: process.env.NODE_ENV === 'production' 
+    ? { rejectUnauthorized: false } 
+    : false
 });
 
 export default pool;
