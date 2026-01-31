@@ -7,7 +7,9 @@ const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: {
+    rejectUnauthorized: false  // Add this object, not just boolean
+  }
 });
 
 // Function to create tables
@@ -84,35 +86,30 @@ const createTables = async () => {
     await pool.query(sql);
     console.log("✅ Database tables created/verified successfully!");
     
-    // Create indexes
-    const indexSql = `
-      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-      CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, expense_date);
-      CREATE INDEX IF NOT EXISTS idx_expenses_budget_month ON expenses(budget_month);
-      CREATE INDEX IF NOT EXISTS idx_monthly_budget_user_month ON monthly_budget(user_id, month);
-    `;
-    
-    await pool.query(indexSql);
-    console.log("✅ Database indexes created/verified successfully!");
-    
   } catch (error) {
     console.error('❌ Error creating database tables:', error.message);
-    process.exit(1); // Exit if tables can't be created
+    // Don't exit, just log error
   }
 };
 
-// Initialize database
-createTables();
+// Initialize database - with retry logic
+const initializeDatabase = async () => {
+  try {
+    // Test connection first
+    await pool.query('SELECT NOW()');
+    console.log("✅ PostgreSQL Database Connected!");
+    
+    // Then create tables
+    await createTables();
+  } catch (error) {
+    console.error('❌ Database initialization error:', error.message);
+    // Retry after 5 seconds
+    setTimeout(initializeDatabase, 5000);
+  }
+};
 
-// Test connection
-pool.on('connect', () => {
-  console.log("✅ PostgreSQL Database Connected!");
-});
-
-pool.on('error', (err) => {
-  console.error('❌ PostgreSQL Database Error:', err.message);
-});
+// Start database initialization
+initializeDatabase();
 
 // Query helper function
 export const query = async (text, params) => {
