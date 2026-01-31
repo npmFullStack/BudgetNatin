@@ -12,10 +12,11 @@ const pool = new Pool({
 
 // Function to create tables
 const createTables = async () => {
-  const client = await pool.connect();
   try {
-    // Create users table first
-    await client.query(`
+    console.log('🔄 Creating database tables...');
+    
+    const sql = `
+      -- Users table
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
@@ -28,10 +29,8 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    
-    // Create other tables
-    await client.query(`
+
+      -- Expense categories table
       CREATE TABLE IF NOT EXISTS expense_categories (
         category_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -40,9 +39,8 @@ const createTables = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         CONSTRAINT unique_user_category UNIQUE (user_id, name)
       );
-    `);
-    
-    await client.query(`
+
+      -- Monthly budget table
       CREATE TABLE IF NOT EXISTS monthly_budget (
         budget_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -53,9 +51,8 @@ const createTables = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         CONSTRAINT unique_user_month UNIQUE (user_id, month)
       );
-    `);
-    
-    await client.query(`
+
+      -- Expenses table
       CREATE TABLE IF NOT EXISTS expenses (
         expense_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -66,9 +63,8 @@ const createTables = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (category_id) REFERENCES expense_categories(category_id) ON DELETE CASCADE
       );
-    `);
-    
-    await client.query(`
+
+      -- Extra money table
       CREATE TABLE IF NOT EXISTS extra_money (
         extra_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -77,9 +73,8 @@ const createTables = async () => {
         added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
-    `);
-    
-    await client.query(`
+
+      -- Notifications table
       CREATE TABLE IF NOT EXISTS notifications (
         notification_id SERIAL PRIMARY KEY,
         user_id INT NOT NULL,
@@ -92,19 +87,54 @@ const createTables = async () => {
         related_type VARCHAR(50),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
-    `);
+    `;
     
-    console.log("✅ Database tables created successfully!");
+    await pool.query(sql);
+    console.log("✅ Database tables created/verified successfully!");
+    
+    // Create indexes
+    try {
+      const indexSql = `
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, expense_date);
+        CREATE INDEX IF NOT EXISTS idx_expenses_budget_month ON expenses(budget_month);
+        CREATE INDEX IF NOT EXISTS idx_monthly_budget_user_month ON monthly_budget(user_id, month);
+      `;
+      await pool.query(indexSql);
+      console.log("✅ Database indexes created/verified successfully!");
+    } catch (indexError) {
+      console.log("⚠️  Index creation skipped or already exists");
+    }
+    
   } catch (error) {
-    console.error('❌ Error creating tables:', error.message);
-  } finally {
-    client.release();
+    console.error('❌ Error creating database tables:', error.message);
+    console.error('Error details:', error);
   }
 };
 
-// Initialize database on startup
-createTables();
+// Initialize database
+const initializeDatabase = async () => {
+  try {
+    // Test connection
+    const result = await pool.query('SELECT NOW()');
+    console.log("✅ PostgreSQL Database Connected!");
+    console.log("📅 Database time:", result.rows[0].now);
+    
+    // Create tables
+    await createTables();
+    
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error.message);
+    console.log('🔄 Retrying in 10 seconds...');
+    setTimeout(initializeDatabase, 10000);
+  }
+};
 
+// Start database initialization (don't await, let it run in background)
+initializeDatabase();
+
+// Query helper function
 export const query = async (text, params) => {
   try {
     const result = await pool.query(text, params);

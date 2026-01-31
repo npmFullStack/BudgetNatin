@@ -17,42 +17,43 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS configuration for production
-
+// CORS configuration
 const allowedOrigins = [
     "http://localhost:5173",
-    "https://budgetnatinweb.onrender.com", // Your frontend URL
+    "https://budgetnatinweb.onrender.com",
     process.env.CLIENT_URL
 ].filter(Boolean);
 
 app.use(
     cors({
         origin: function (origin, callback) {
-            // Allow requests with no origin (like mobile apps or curl requests)
             if (!origin) return callback(null, true);
-
-            if (allowedOrigins.indexOf(origin) === -1) {
-                const msg =
-                    "The CORS policy for this site does not allow access from the specified Origin.";
-                return callback(new Error(msg), false);
+            
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'), false);
             }
-            return callback(null, true);
         },
-        credentials: true
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
     })
 );
+
 app.use(express.json());
 
-// Session middleware - UPDATED for production
+// Session middleware for production
 app.use(
     session({
         secret: process.env.JWT_SECRET || "your_session_secret",
         resave: false,
         saveUninitialized: false,
+        proxy: true, // Important for Render
         cookie: {
-            secure: process.env.NODE_ENV === "production", // Use secure cookies in production
+            secure: true, // Must be true for HTTPS
             httpOnly: true,
-            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+            sameSite: 'none',
             maxAge: 24 * 60 * 60 * 1000
         }
     })
@@ -62,13 +63,45 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Health check endpoint (important for Render)
+// Health check endpoint
 app.get("/health", (req, res) => {
     res.status(200).json({
         status: "OK",
         timestamp: new Date(),
-        environment: process.env.NODE_ENV
+        environment: process.env.NODE_ENV,
+        service: "budgetnatin-backend",
+        version: "1.0.0",
+        database: "connected"
     });
+});
+
+// Keep-alive endpoint (prevent Render sleep)
+app.get("/keep-alive", (req, res) => {
+    res.status(200).json({
+        alive: true,
+        timestamp: new Date(),
+        message: "Service is active and running"
+    });
+});
+
+// Database setup endpoint (temporary - remove after setup)
+import pool from './db.js';
+app.get("/api/setup-database", async (req, res) => {
+    try {
+        // Re-run table creation
+        const sql = `YOUR_SQL_SCHEMA_HERE`;
+        await pool.query(sql);
+        res.json({ 
+            success: true, 
+            message: "Database tables created successfully!" 
+        });
+    } catch (error) {
+        console.error('Database setup error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
 });
 
 // Root endpoint
@@ -76,7 +109,17 @@ app.get("/", (req, res) => {
     res.json({
         message: "Budgetnatin Backend API is running!",
         version: "1.0.0",
-        docs: "/api endpoints available"
+        environment: process.env.NODE_ENV,
+        endpoints: {
+            auth: "/api/auth",
+            expenses: "/api/expenses",
+            categories: "/api/expense-categories",
+            budget: "/api/monthly-budget",
+            extraMoney: "/api/extra-money",
+            notifications: "/api/notifications"
+        },
+        health: "/health",
+        keepAlive: "/keep-alive"
     });
 });
 
@@ -90,24 +133,38 @@ app.use("/api/notifications", notificationRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    console.error("🚨 Server Error:", err.stack);
     res.status(500).json({
         error: "Something went wrong!",
-        message:
-            process.env.NODE_ENV === "development" ? err.message : undefined
+        message: process.env.NODE_ENV === "development" ? err.message : "Internal server error",
+        timestamp: new Date()
     });
 });
 
 // 404 handler
 app.use((req, res) => {
-    res.status(404).json({ error: "Route not found" });
+    res.status(404).json({
+        error: "Route not found",
+        path: req.path,
+        method: req.method,
+        timestamp: new Date()
+    });
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log("============================");
+    console.log("=".repeat(50));
     console.log(`✅ Server started on port ${PORT}`);
-    console.log(`📡 http://localhost:${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log("============================");
+    console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`🌐 CORS Origins: ${allowedOrigins.join(', ')}`);
+    console.log("=".repeat(50));
+    
+    // Log startup message with URLs
+    if (process.env.NODE_ENV === 'production') {
+        console.log(`🚀 Production Server Running`);
+        console.log(`🔗 Health Check: https://budgetnatin.onrender.com/health`);
+        console.log(`🔗 Keep Alive: https://budgetnatin.onrender.com/keep-alive`);
+    } else {
+        console.log(`🚀 Development Server: http://localhost:${PORT}`);
+    }
 });
